@@ -117,7 +117,7 @@ fn test_init_success() {
 
 #[test]
 fn test_admin_instance_ttl_extended_on_admin_ops() {
-    let (env, contract_id, token_id, admin, sec_admin, treasury, instructor) = setup();
+    let (env, contract_id, token_id, admin, sec_admin, _treasury, instructor) = setup();
     let client = HamplardContractClient::new(&env, &contract_id);
 
     env.ledger().with_mut(|l| {
@@ -2044,9 +2044,8 @@ fn test_archive_active_course_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "course must be paused before archiving")]
-fn test_archive_pending_course_rejected() {
-    let (env, contract_id, token_id, admin, sec_admin, treasury, instructor) = setup();
+fn test_archive_pending_course_succeeds() {
+    let (env, contract_id, token_id, admin, sec_admin, _treasury, instructor) = setup();
     let client = HamplardContractClient::new(&env, &contract_id);
 
     client.register_course(
@@ -2060,13 +2059,41 @@ fn test_archive_pending_course_rejected() {
         &soroban_sdk::Vec::new(&env),
     );
 
-    // Course is Pending — must panic
+    // Pending courses cannot have enrollments and can be archived directly.
     client.archive_course(
         &admin,
         &sec_admin,
         &String::from_str(&env, "COURSE-ARCHIVE-PENDING"),
         &None,
     );
+
+    let course = client
+        .get_course(&String::from_str(&env, "COURSE-ARCHIVE-PENDING"))
+        .unwrap();
+    assert_eq!(course.status, CourseStatus::Archived);
+}
+
+#[test]
+fn test_archive_rejected_course_succeeds() {
+    let (env, contract_id, token_id, admin, sec_admin, _treasury, instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+    let course_id = String::from_str(&env, "COURSE-ARCHIVE-REJECTED");
+
+    client.register_course(
+        &instructor,
+        &course_id,
+        &100_000_000,
+        &token_id,
+        &0u32,
+        &None,
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &soroban_sdk::Vec::new(&env),
+    );
+    client.reject_course(&admin, &course_id, &String::from_str(&env, "not a fit"));
+    client.archive_course(&admin, &sec_admin, &course_id, &None);
+
+    let course = client.get_course(&course_id).unwrap();
+    assert_eq!(course.status, CourseStatus::Archived);
 }
 
 #[test]
