@@ -90,6 +90,18 @@ fn register_and_approve_course(
 /// Get the enrollment reference for a student/course pair.
 /// The enrollment reference is generated on-chain during enrollment
 /// and is used by issue_certificate to look up the enrollment.
+fn evidence_hash(env: &Env, value: &str) -> BytesN<32> {
+    let mut bytes = [0u8; 32];
+    let input = value.as_bytes();
+    for (idx, b) in input.iter().enumerate() {
+        if idx < 32 {
+            bytes[idx] = *b;
+        }
+    }
+    BytesN::from_array(env, &bytes)
+}
+
+
 fn get_enrollment_ref(
     env: &Env,
     client: &HamplardContractClient,
@@ -914,7 +926,7 @@ fn test_full_lifecycle_enroll_complete_certify() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
 
@@ -970,7 +982,7 @@ fn test_certificate_issued_event_contains_full_issuance_details() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "completion-proof")),
+        &Some(evidence_hash(&env, "completion-proof")),
     );
 
     client.issue_certificate(
@@ -1077,7 +1089,7 @@ fn test_revoke_certificate() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
     client.issue_certificate(
         &admin,
@@ -1140,7 +1152,7 @@ fn test_event_certificate_revoked() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -1228,7 +1240,7 @@ fn test_revoke_certificate_metadata_persisted() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -1289,7 +1301,7 @@ fn test_issue_certificate_with_instructor_signature() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
 
     let signature = BytesN::from_array(&env, &[7u8; 64]);
@@ -1334,7 +1346,7 @@ fn test_issue_certificate_without_instructor_signature() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
 
     client.issue_certificate(
@@ -1564,7 +1576,7 @@ fn test_mark_completed_with_evidence_does_not_require_student_auth() {
     client.enroll(&student, &course_id);
 
     // Call mark_completed with evidence hash.
-    let hash = String::from_str(&env, "some_evidence_hash");
+    let hash = evidence_hash(&env, "some_evidence_hash");
     client.mark_completed(&admin, &student, &course_id, &Some(hash.clone()));
 
     // Verify admin was required to authorize but student was not
@@ -1626,7 +1638,7 @@ fn test_mark_completed_rejects_mismatched_enrollment_course_id() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
 }
 
@@ -1963,7 +1975,7 @@ fn test_issue_certificate_title_too_long() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "hash")),
+        &Some(evidence_hash(&env, "hash")),
     );
 
     let long_title = String::from_str(&env, &"T".repeat(513));
@@ -2002,7 +2014,7 @@ fn test_issue_certificate_id_too_long() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "hash")),
+        &Some(evidence_hash(&env, "hash")),
     );
 
     let long_cert_id = String::from_str(&env, &"C".repeat(257));
@@ -2210,7 +2222,7 @@ fn test_certificate_id_collision_across_courses() {
         &admin,
         &student_a,
         &course_a,
-        &Some(String::from_str(&env, "ev_a")),
+        &Some(evidence_hash(&env, "ev_a")),
     );
     client.issue_certificate(
         &admin,
@@ -2231,7 +2243,7 @@ fn test_certificate_id_collision_across_courses() {
         &admin,
         &student_b,
         &course_b,
-        &Some(String::from_str(&env, "ev_b")),
+        &Some(evidence_hash(&env, "ev_b")),
     );
     client.issue_certificate(
         &admin,
@@ -2364,7 +2376,7 @@ fn test_old_admin_rejected_for_all_admin_only_functions_after_transfer() {
             &admin,
             &student,
             &course_id,
-            &Some(String::from_str(&env, "evidence")),
+            &Some(evidence_hash(&env, "evidence")),
         );
     }));
     assert!(res.is_err(), "old admin must be rejected by mark_completed");
@@ -2373,7 +2385,7 @@ fn test_old_admin_rejected_for_all_admin_only_functions_after_transfer() {
         &new_admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // issue_certificate — old admin must be rejected
@@ -2632,7 +2644,7 @@ fn test_enrollment_ttl_extended_on_write() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
 }
@@ -3321,7 +3333,7 @@ fn test_verify_certificate_returns_true_for_valid_cert() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -3363,7 +3375,7 @@ fn test_verify_certificate_returns_false_for_revoked_cert() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -3431,7 +3443,7 @@ fn test_verify_certificate_false_does_not_mutate_state() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -3889,14 +3901,14 @@ fn test_concurrent_completion() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "ev")),
+        &Some(evidence_hash(&env, "ev")),
     );
     // Second completion should panic
     client.mark_completed(
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "ev2")),
+        &Some(evidence_hash(&env, "ev2")),
     );
 }
 
@@ -4097,7 +4109,7 @@ fn test_course_certificate_id_collision_verification() {
         &admin,
         &student,
         &matching_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
 
     // Issue certificate with matching_id (same as course_id)
@@ -4434,7 +4446,7 @@ fn test_has_completed_distinguishes_absent_enrollment_from_incomplete() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
 }
@@ -4464,7 +4476,7 @@ fn test_re_enroll_after_completion_succeeds() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_1")),
+        &Some(evidence_hash(&env, "evidence_1")),
     );
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
 
@@ -4517,7 +4529,7 @@ fn test_re_enroll_archives_original_completion_and_certificate() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_original")),
+        &Some(evidence_hash(&env, "evidence_original")),
     );
     client.issue_certificate(
         &admin,
@@ -4546,7 +4558,7 @@ fn test_re_enroll_archives_original_completion_and_certificate() {
     assert_eq!(archived.certificate_id, Some(cert_id));
     assert_eq!(
         archived.evidence_hash,
-        Some(String::from_str(&env, "evidence_original"))
+        Some(evidence_hash(&env, "evidence_original"))
     );
 }
 
@@ -4621,7 +4633,7 @@ fn test_events_emitted_for_admin_operations() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     let (event_student, event_admin, _event_ledger): (Address, Address, u32) =
         last_event_val(&env, &contract_id, "course_completed")
@@ -4833,7 +4845,7 @@ fn test_re_enroll_multiple_times_accumulates_history() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence-1")),
+        &Some(evidence_hash(&env, "evidence-1")),
     );
     assert_eq!(
         client
@@ -4849,7 +4861,7 @@ fn test_re_enroll_multiple_times_accumulates_history() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence-2")),
+        &Some(evidence_hash(&env, "evidence-2")),
     );
     assert_eq!(
         client
@@ -4891,7 +4903,7 @@ fn test_get_enrollment_history_unauthorized_access() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.re_enroll(&student, &course_id);
 
@@ -5065,7 +5077,7 @@ fn test_get_certificate_authorized_roles() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
 
     let cert_id = String::from_str(&env, "CERT-123");
@@ -5118,7 +5130,7 @@ fn test_get_certificate_unauthorized_third_party_fails() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence_hash")),
+        &Some(evidence_hash(&env, "evidence_hash")),
     );
 
     let cert_id = String::from_str(&env, "CERT-123");
@@ -5180,7 +5192,7 @@ fn test_certificate_student_b_without_enrollment_panics() {
         &admin,
         &student_a,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Try to issue certificate using student_b's address — must panic (no enrollment)
@@ -5225,7 +5237,7 @@ fn test_certificate_student_matches_enrollment() {
         &admin,
         &student_a,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Issue certificate correctly using student_a's address
@@ -5369,7 +5381,7 @@ fn test_mark_completed_before_min_duration_fails() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 }
 
@@ -5404,7 +5416,7 @@ fn test_mark_completed_after_min_duration_succeeds() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
@@ -5436,7 +5448,7 @@ fn test_mark_completed_default_zero_delay_allows_immediate_completion() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
@@ -5503,7 +5515,7 @@ fn test_issue_certificate_empty_id_rejected() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Empty certificate ID must be rejected
@@ -5546,7 +5558,7 @@ fn test_revoke_certificate_double_revocation_rejected() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     let cert_id = String::from_str(&env, "CERT-DBL-REVOKE");
@@ -5599,7 +5611,7 @@ fn test_revoke_certificate_metadata_unchanged_after_rejected_double_revoke() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -5677,7 +5689,7 @@ fn test_revoke_certificate_id_cannot_be_reused_to_unrevoke() {
         &admin,
         &student_a,
         &course_a,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -5699,7 +5711,7 @@ fn test_revoke_certificate_id_cannot_be_reused_to_unrevoke() {
         &admin,
         &student_b,
         &course_b,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -5764,7 +5776,7 @@ fn test_mark_completed_panics_when_enrollment_expired() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "late_evidence")),
+        &Some(evidence_hash(&env, "late_evidence")),
     );
 }
 
@@ -5835,7 +5847,7 @@ fn test_has_completed_returns_true_when_completed_before_expiry() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Advance past the expiry — completed flag must still be true
@@ -5879,7 +5891,7 @@ fn test_enrollment_expiry_none_allows_completion_at_any_time() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "late_evidence")),
+        &Some(evidence_hash(&env, "late_evidence")),
     );
 
     assert_eq!(client.has_completed(&student, &course_id), Some(true));
@@ -5915,7 +5927,7 @@ fn test_certificate_issued_by_matches_contract_address() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -5961,7 +5973,7 @@ fn test_certificate_issued_by_is_not_admin_or_instructor() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -6018,7 +6030,7 @@ fn test_certificate_issued_by_persists_after_revocation() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
     client.issue_certificate(
         &admin,
@@ -6079,7 +6091,7 @@ fn test_multiple_certificates_share_same_issued_by() {
         &admin,
         &student_a,
         &course_a,
-        &Some(String::from_str(&env, "proof-a")),
+        &Some(evidence_hash(&env, "proof-a")),
     );
     client.issue_certificate(
         &admin,
@@ -6097,7 +6109,7 @@ fn test_multiple_certificates_share_same_issued_by() {
         &admin,
         &student_b,
         &course_b,
-        &Some(String::from_str(&env, "proof-b")),
+        &Some(evidence_hash(&env, "proof-b")),
     );
     client.issue_certificate(
         &admin,
@@ -6784,7 +6796,7 @@ fn test_content_hash_survives_enroll_and_completion() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "proof")),
+        &Some(evidence_hash(&env, "proof")),
     );
 
     let course = client.get_course(&course_id).unwrap();
@@ -6885,7 +6897,7 @@ fn test_platform_pause_lifecycle_end_to_end() {
         &admin,
         &student,
         &String::from_str(&env, "COURSE-PAUSE-TEST"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Pause the platform
@@ -7068,7 +7080,7 @@ fn test_platform_counter_decrements_on_completion() {
         &admin,
         &student1,
         &String::from_str(&env, "COURSE-001"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Counter should decrement
@@ -7156,7 +7168,7 @@ fn test_mark_completed_on_archived_course_rejected() {
         &admin,
         &student,
         &String::from_str(&env, "COURSE-001"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // Now archive the course (which requires pausing first)
@@ -7174,7 +7186,7 @@ fn test_mark_completed_on_archived_course_rejected() {
         &admin,
         &student,
         &String::from_str(&env, "COURSE-001"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 }
 
@@ -7217,7 +7229,7 @@ fn test_mark_completed_rejects_archived_course_even_with_active_enrollment() {
         &admin,
         &student,
         &String::from_str(&env, "COURSE-001"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 }
 
@@ -7250,7 +7262,7 @@ fn test_mark_completed_succeeds_on_paused_course() {
         &admin,
         &student,
         &String::from_str(&env, "COURSE-001"),
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     let enrollment = client
@@ -7465,7 +7477,7 @@ fn test_enroll_blocked_when_prerequisite_completed_but_not_certified() {
         &admin,
         &student,
         &course_a,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     client.enroll(&student, &course_b);
@@ -7510,7 +7522,7 @@ fn test_enroll_succeeds_with_completed_and_certified_prerequisite() {
         &admin,
         &student,
         &course_a,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -7568,7 +7580,7 @@ fn test_enroll_blocked_when_prerequisite_certificate_revoked() {
         &admin,
         &student,
         &course_a,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -7617,7 +7629,7 @@ fn test_issue_certificate_after_revoke_is_rejected() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -7690,7 +7702,7 @@ fn test_reissue_certificate_allowed_after_re_enroll() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -7722,7 +7734,7 @@ fn test_reissue_certificate_allowed_after_re_enroll() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence-2")),
+        &Some(evidence_hash(&env, "evidence-2")),
     );
     client.issue_certificate(
         &admin,
@@ -7907,7 +7919,7 @@ fn test_issue_141_certificate_course_id_matches_enrollment() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -7985,7 +7997,7 @@ fn test_issue_141_enrollment_ref_is_unique_per_enrollment() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
     client.issue_certificate(
         &admin,
@@ -8784,7 +8796,7 @@ fn test_mark_completed_twice_rejected() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "first_evidence")),
+        &Some(evidence_hash(&env, "first_evidence")),
     );
 
     let enrollment = client.get_enrollment(&admin, &student, &course_id).unwrap();
@@ -8795,7 +8807,7 @@ fn test_mark_completed_twice_rejected() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "second_evidence")),
+        &Some(evidence_hash(&env, "second_evidence")),
     );
 }
 
@@ -8822,7 +8834,7 @@ fn test_mark_completed_twice_idempotency_check() {
 
     client.enroll(&student, &course_id);
 
-    let evidence = Some(String::from_str(&env, "same_evidence"));
+    let evidence = Some(evidence_hash(&env, "same_evidence"));
 
     // First call
     client.mark_completed(&admin, &student, &course_id, &evidence);
@@ -9097,7 +9109,7 @@ fn test_issue_certificate_with_uuid_enrollment_reference() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     // A backend UUID is not a Stellar address and is not the on-chain
@@ -9122,8 +9134,7 @@ fn test_issue_certificate_with_uuid_enrollment_reference() {
 }
 
 #[test]
-#[should_panic(expected = "evidence_hash cannot be empty")]
-fn test_mark_completed_rejects_empty_evidence_hash() {
+fn test_mark_completed_accepts_zeroed_evidence_hash() {
     let (env, contract_id, token_id, admin, _sec_admin, _treasury, instructor) = setup();
     let client = HamplardContractClient::new(&env, &contract_id);
 
@@ -9142,12 +9153,12 @@ fn test_mark_completed_rejects_empty_evidence_hash() {
     let course_id = String::from_str(&env, "COURSE-EMPTY-EVIDENCE");
     client.enroll(&student, &course_id);
 
-    client.mark_completed(
-        &admin,
-        &student,
-        &course_id,
-        &Some(String::from_str(&env, "")),
-    );
+    let evidence = Some(BytesN::from_array(&env, &[0u8; 32]));
+    client.mark_completed(&admin, &student, &course_id, &evidence);
+
+    let enrollment = client.get_enrollment(&student, &student, &course_id).unwrap();
+    assert_eq!(enrollment.evidence_hash, evidence);
+    assert_eq!(client.has_completed(&student, &course_id), Some(true));
 }
 
 #[test]
@@ -9171,7 +9182,7 @@ fn test_mark_completed_with_evidence_needs_no_student_signature() {
     client.enroll(&student, &course_id);
 
     // Only the admin signs; the student's auth is deliberately not mocked.
-    let evidence = Some(String::from_str(&env, "sha256:9f86d081884c7d65"));
+    let evidence = Some(evidence_hash(&env, "sha256:9f86d081884c7d65"));
     client
         .mock_auths(&[MockAuth {
             address: &admin,
@@ -9217,7 +9228,7 @@ fn test_get_certificate_denies_third_party_even_with_student_auth() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     let cert_id = String::from_str(&env, "CERT-DENY");
@@ -9261,7 +9272,7 @@ fn test_get_certificate_allows_student_instructor_and_admin() {
         &admin,
         &student,
         &course_id,
-        &Some(String::from_str(&env, "evidence")),
+        &Some(evidence_hash(&env, "evidence")),
     );
 
     let cert_id = String::from_str(&env, "CERT-ALLOW");
@@ -9654,7 +9665,7 @@ fn enroll_and_certify(
         admin,
         student,
         &course,
-        &Some(String::from_str(env, "completion-evidence")),
+        &Some(evidence_hash(env, "completion-evidence")),
     );
     client.issue_certificate(
         admin,
