@@ -2857,11 +2857,13 @@ fn test_batch_enroll_emits_event_for_each_enrollment() {
     course_ids.push_back(String::from_str(&env, "COURSE-EVENT-A"));
     course_ids.push_back(String::from_str(&env, "COURSE-EVENT-B"));
 
-    client.batch_enroll(&student, &course_ids);
+    let total_paid = client.batch_enroll(&student, &course_ids);
+    assert_eq!(total_paid, price_a + price_b);
 
-    // Verify that two enrollment events were emitted
+    // Verify that two per-course events and one batch summary were emitted.
     let events = env.events().all();
     let mut enrollment_events = 0u32;
+    let mut batch_events = 0u32;
     let mut event_a_found = false;
     let mut event_b_found = false;
 
@@ -2894,6 +2896,18 @@ fn test_batch_enroll_emits_event_for_each_enrollment() {
                 assert_eq!(event_amount, price_b);
                 event_b_found = true;
             }
+        } else if sym == Symbol::new(&env, "batch_enrolled") {
+            batch_events += 1;
+
+            let (event_student, event_course_ids, event_total_paid): (
+                Address,
+                soroban_sdk::Vec<String>,
+                i128,
+            ) = data.try_into_val(&env).unwrap();
+
+            assert_eq!(event_student, student);
+            assert_eq!(event_course_ids, course_ids);
+            assert_eq!(event_total_paid, price_a + price_b);
         }
     }
 
@@ -2901,6 +2915,7 @@ fn test_batch_enroll_emits_event_for_each_enrollment() {
     assert_eq!(enrollment_events, 2);
     assert!(event_a_found);
     assert!(event_b_found);
+    assert_eq!(batch_events, 1);
 }
 
 // ============================================================
