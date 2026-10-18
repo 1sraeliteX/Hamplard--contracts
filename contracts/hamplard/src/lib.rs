@@ -4093,6 +4093,9 @@ impl HamplardContract {
     pub fn freeze_instructor(env: Env, admin: Address, instructor: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "freeze_instructor");
+        if Self::is_instructor_frozen_internal(&env, &instructor) {
+            panic!("instructor already frozen");
+        }
         env.storage()
             .instance()
             .set(&DataKey::InstructorBlocked(instructor.clone()), &true);
@@ -4141,6 +4144,9 @@ impl HamplardContract {
     pub fn unfreeze_instructor(env: Env, admin: Address, instructor: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "unfreeze_instructor");
+        if !Self::is_instructor_frozen_internal(&env, &instructor) {
+            panic!("instructor not frozen");
+        }
         env.storage()
             .instance()
             .remove(&DataKey::InstructorBlocked(instructor.clone()));
@@ -4209,6 +4215,9 @@ impl HamplardContract {
     pub fn block_student(env: Env, admin: Address, student: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "block_student");
+        if Self::is_student_blocked_internal(&env, &student) {
+            panic!("student already blocked");
+        }
         env.storage()
             .instance()
             .set(&DataKey::StudentBlocked(student.clone()), &true);
@@ -4222,6 +4231,9 @@ impl HamplardContract {
     pub fn unblock_student(env: Env, admin: Address, student: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "unblock_student");
+        if !Self::is_student_blocked_internal(&env, &student) {
+            panic!("student not blocked");
+        }
         env.storage()
             .instance()
             .remove(&DataKey::StudentBlocked(student.clone()));
