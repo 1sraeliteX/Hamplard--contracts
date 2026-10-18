@@ -2944,6 +2944,77 @@ fn test_pause_platform_unauthorized_includes_operation() {
 }
 
 #[test]
+#[should_panic(expected = "platform is already paused")]
+fn test_pause_platform_rejects_double_pause() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    client.pause_platform(&admin);
+    client.pause_platform(&admin);
+}
+
+#[test]
+#[should_panic(expected = "platform is not paused")]
+fn test_unpause_platform_rejects_double_unpause() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    client.unpause_platform(&admin);
+}
+
+/// Read the remaining instance TTL of the contract.
+fn instance_ttl(env: &Env, contract_id: &Address) -> u32 {
+    use soroban_sdk::testutils::storage::Instance as _;
+    env.as_contract(contract_id, || {
+        env.storage().instance().get_ttl()
+    })
+}
+
+#[test]
+fn test_pause_platform_extends_instance_ttl() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 400_000;
+    });
+
+    assert!(
+        instance_ttl(&env, &contract_id) < HamplardContract::INSTANCE_TTL_THRESHOLD
+    );
+
+    client.pause_platform(&admin);
+
+    assert_eq!(
+        instance_ttl(&env, &contract_id),
+        HamplardContract::INSTANCE_TTL_EXTEND_TO
+    );
+}
+
+#[test]
+fn test_unpause_platform_extends_instance_ttl() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    client.pause_platform(&admin);
+
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 400_000;
+    });
+
+    assert!(
+        instance_ttl(&env, &contract_id) < HamplardContract::INSTANCE_TTL_THRESHOLD
+    );
+
+    client.unpause_platform(&admin);
+
+    assert_eq!(
+        instance_ttl(&env, &contract_id),
+        HamplardContract::INSTANCE_TTL_EXTEND_TO
+    );
+}
+
+#[test]
 #[should_panic(expected = "unauthorized: add_approved_token")]
 fn test_add_approved_token_unauthorized_includes_operation() {
     let (env, contract_id, token_id, _admin, _sec_admin, _treasury, instructor) = setup();

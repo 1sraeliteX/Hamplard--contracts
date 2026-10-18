@@ -3688,9 +3688,20 @@ impl HamplardContract {
     pub fn pause_platform(env: Env, admin: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "pause_platform");
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::PlatformPaused)
+            .unwrap_or(false)
+        {
+            panic!("platform is already paused");
+        }
         env.storage()
             .instance()
             .set(&DataKey::PlatformPaused, &true);
+        env.storage()
+            .instance()
+            .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_EXTEND_TO);
 
         env.events()
             .publish((Symbol::new(&env, "platform_paused"), admin.clone()), admin);
@@ -3699,9 +3710,20 @@ impl HamplardContract {
     pub fn unpause_platform(env: Env, admin: Address) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "unpause_platform");
+        if !env
+            .storage()
+            .instance()
+            .get(&DataKey::PlatformPaused)
+            .unwrap_or(false)
+        {
+            panic!("platform is not paused");
+        }
         env.storage()
             .instance()
             .set(&DataKey::PlatformPaused, &false);
+        env.storage()
+            .instance()
+            .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_EXTEND_TO);
 
         env.events().publish(
             (Symbol::new(&env, "platform_unpaused"), admin.clone()),
