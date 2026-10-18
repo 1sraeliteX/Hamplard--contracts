@@ -2869,7 +2869,13 @@ impl HamplardContract {
         if course.status != CourseStatus::Active {
             panic!("course is not available for enrollment");
         }
-
+        
+        if let Some(start) = course.enrollment_start_ledger {
+            if env.ledger().sequence() < start {
+                panic!("enrollment has not started for this course");
+            }
+        }
+            
         if !env
             .storage()
             .instance()
