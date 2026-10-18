@@ -10833,7 +10833,7 @@ fn test_process_refund_archives_enrollment_to_history() {
     assert_eq!(archived.course_id, course_id);
 }
 
-    #[test]
+#[test]
 #[should_panic(expected = "enrollment has not started for this course")]
 fn test_re_enroll_rejects_before_enrollment_start_ledger() {
     let (env, contract_id, token_id, admin, _sec_admin, _treasury, instructor) = setup();
@@ -10861,11 +10861,11 @@ fn test_re_enroll_rejects_before_enrollment_start_ledger() {
         &Some(String::from_str(&env, "evidence")),
     );
 
-    // Instructor yana saita ranar buɗe rajista a gaba
+    // Instructor sets the enrollment start ledger in the future
     let enrollment_start = env.ledger().sequence() + 10;
     client.set_enrollment_start_ledger(&instructor, &course_id, &Some(enrollment_start));
 
-    // Dole ya yi panic kamar enroll()
+    // Must panic exactly like enroll()
     client.re_enroll(&student, &course_id);
 }
 
