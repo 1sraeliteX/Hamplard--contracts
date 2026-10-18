@@ -16,6 +16,10 @@
 //! - `mark_completed` — marks a student enrollment as completed (blocked students cannot proceed)
 //! - `issue_certificate` — mints an on-chain certificate of completion (blocked students cannot proceed)
 //! - `revoke_certificate` — flags a certificate as revoked (remains on-chain for audit)
+//! - `process_refund` — approves a pending refund; if the enrollment already has a
+//!   certificate issued, the certificate is revoked with reason `REFUNDED` and a
+//!   `certificate_revoked` event is emitted, so no refunded enrollment can leave
+//!   behind a certificate that verifies as valid
 //! - `bulk_revoke_course_certificates` — flags every certificate of a course as revoked in one transaction
 //! - `pause_platform` / `unpause_platform` — halts or restores all enrollments
 //! - `add_approved_token` / `remove_approved_token` — controls which token contracts are accepted
