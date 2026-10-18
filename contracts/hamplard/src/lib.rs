@@ -265,7 +265,9 @@ pub struct Course {
     pub total_enrollments: u32,
     /// Total active enrollments (enrolled but not completed)
     pub active_enrollments: u32,
-    /// Total USDC earned across all enrollments (in stroops)
+    /// Total USDC earned across all enrollments, net of refunds (in stroops).
+    /// Incremented by `course.price` on enrollment and decremented by the
+    /// refunded `amount_paid` on every refund path (process_refund, archive_course).
     pub total_earned: i128,
     /// Course status
     pub status: CourseStatus,
