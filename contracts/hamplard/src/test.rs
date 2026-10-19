@@ -4529,6 +4529,58 @@ fn test_student_blocklist_lifecycle() {
 }
 
 #[test]
+#[should_panic(expected = "student already blocked")]
+fn test_block_student_already_blocked_panics() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+    let student = Address::generate(&env);
+
+    client.block_student(&admin, &student);
+    assert!(client.is_student_blocked(&student));
+
+    // Blocking an already-blocked student is a no-op and must panic.
+    client.block_student(&admin, &student);
+}
+
+#[test]
+#[should_panic(expected = "student not blocked")]
+fn test_unblock_student_not_blocked_panics() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, _instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+    let student = Address::generate(&env);
+
+    assert!(!client.is_student_blocked(&student));
+
+    // Unblocking a student that was never blocked is a no-op and must panic.
+    client.unblock_student(&admin, &student);
+}
+
+#[test]
+#[should_panic(expected = "instructor already frozen")]
+fn test_freeze_instructor_already_frozen_panics() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    client.freeze_instructor(&admin, &instructor);
+    assert!(client.is_instructor_frozen(&instructor));
+
+    // Freezing an already-frozen instructor is a no-op and must panic.
+    client.freeze_instructor(&admin, &instructor);
+}
+
+#[test]
+#[should_panic(expected = "instructor not frozen")]
+fn test_unfreeze_instructor_not_frozen_panics() {
+    let (env, contract_id, _token_id, admin, _sec_admin, _treasury, instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    assert!(!client.is_instructor_frozen(&instructor));
+
+    // Unfreezing an instructor that was never frozen is a no-op and must panic.
+    client.unfreeze_instructor(&admin, &instructor);
+}
+
+#[test]
 #[should_panic(expected = "student is blocked")]
 fn test_blocked_student_cannot_enroll() {
     let (env, contract_id, token_id, admin, _sec_admin, _treasury, instructor) = setup();
