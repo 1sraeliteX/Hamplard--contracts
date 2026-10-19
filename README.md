@@ -1,8 +1,35 @@
-# Hamplard — Contract Repo
+﻿# Hamplard — Contract Repo
 
 > **On-chain course enrollment, payments, and certificate issuance on Stellar Soroban**
 
 Hamplard is an online learning platform for practical vocational skills — tailoring, makeup artistry, baking, photography, hairstyling, nail technology, fashion design, and more. This Soroban smart contract handles the trustless financial and credential layer of the platform: course enrollment payments, automatic instructor revenue splits, and verifiable on-chain certificates of completion.
+
+## Short version
+
+Hamplard Contracts is the Soroban smart contract layer for the Hamplard platform. It manages course lifecycle state, enrollment payments, instructor revenue splits, certificate issuance, and revocation in a trustless and auditable way.
+
+The contract provides the core rules for:
+- registering and approving courses
+- pausing and unpausing courses
+- archiving courses permanently
+- enrolling students and splitting payments automatically
+- marking enrollments complete
+- issuing and revoking certificates
+- emitting events for off-chain indexing and backend synchronization
+
+### Main contract concepts
+- Courses move through a lifecycle from Pending to Active, Paused, and Archived.
+- Enrollments trigger automatic platform and instructor payment splits.
+- Certificates can be issued after completion and later revoked with metadata captured on-chain.
+
+### Key features
+- multi-admin authorization for sensitive operations
+- course status enforcement and lifecycle rules
+- instructor earnings accounting
+- certificate issuance and revocation tracking
+- Soroban event emission for off-chain systems and indexers
+
+The detailed documentation below expands on the architecture, data model, contract functions, and deployment flow.
 
 This is **Repo 1 of 3** in the Hamplard project:
 
@@ -22,6 +49,7 @@ This is **Repo 1 of 3** in the Hamplard project:
 - [Data Structures](#data-structures)
 - [Contract Functions](#contract-functions)
 - [Revenue Split Logic](#revenue-split-logic)
+- [Refunds](#refunds)
 - [Certificate Verification](#certificate-verification)
 - [Events](#events)
 - [Project Structure](#project-structure)
@@ -37,7 +65,7 @@ This is **Repo 1 of 3** in the Hamplard project:
 
 ## What the Contract Does
 
-The Hamplard contract is the trust layer for the platform. It handles three responsibilities:
+The Hamplard contract is the trust layer for the platform. It handles four responsibilities:
 
 **1. Course Registry**
 Instructors register courses on-chain with a price and fee structure. Each course starts as `Pending` — an admin must approve it before students can enroll. This gives the platform moderation control without being able to move anyone's funds.
@@ -51,6 +79,9 @@ No escrow needed — the payment splits and lands in both wallets immediately. T
 
 **3. On-Chain Certificates**
 After a student completes a course (verified off-chain by the backend), the admin issues an on-chain certificate. Each certificate is a permanent, verifiable record tied to the student's Stellar address and the course. Anyone can verify a certificate by querying `verify_certificate(certificate_id)` — no trusted middleman needed. Certificates can be revoked by the admin if issued in error.
+
+**4. Refunds**
+Both admins can jointly issue refunds by archiving a course and specifying which students to refund. Refunds return the full enrollment amount to students with incomplete enrollments. This provides dispute resolution and quality control mechanisms without requiring a time window.
 
 ---
 
@@ -95,7 +126,8 @@ This keeps the contract small, cheap to call, and focused on what blockchains ar
 
 | Role | Address | Permissions |
 |------|---------|-------------|
-| **Admin** | Set at `init` | Approve/archive courses, mark completions, issue/revoke certificates, update fee |
+| **Admin** | Set at `init` | Approve/archive courses, mark completions, issue/revoke certificates; part of multi-sig for admin transfers and treasury updates |
+| **Secondary Admin** | Set at `init` | Co-signer for admin transfers and treasury updates; must approve/sign alongside primary admin |
 | **Instructor** | Set per course | Register courses, pause/unpause their own courses |
 | **Student** | Any address | Enroll in active courses |
 | **Treasury** | Set at `init` | Receives platform fee share (passive recipient only) |
@@ -114,6 +146,7 @@ pub struct Course {
     pub platform_fee_percent: u32,     // 0-100; remainder goes to instructor
     pub token: Address,                // USDC Stellar Asset Contract
     pub total_enrollments: u32,
+    pub active_enrollments: u32,
     pub total_earned: i128,
     pub status: CourseStatus,          // Pending | Active | Paused | Archived
     pub created_at_ledger: u32,
@@ -130,6 +163,7 @@ pub struct Enrollment {
     pub enrolled_at_ledger: u32,
     pub completed: bool,
     pub certificate_issued: bool,
+    pub evidence_hash: Option<String>,
 }
 ```
 
@@ -144,6 +178,9 @@ pub struct Certificate {
     pub instructor: Address,
     pub issued_at_ledger: u32,
     pub revoked: bool,
+    pub revoked_by: Option<Address>,
+    pub revoked_at_ledger: Option<u32>,
+    pub revocation_reason: Option<String>,
 }
 ```
 
@@ -160,7 +197,7 @@ Active  ── archive_course() ──→ Archived (admin only, permanent)
 
 ## Contract Functions
 
-### `init(admin, treasury, default_fee_pct)`
+### `init(admin, secondary_admin, treasury, default_fee_pct)`
 Initialises the contract. Called once by the deployer.
 
 ### Course management
@@ -183,25 +220,30 @@ Initialises the contract. Called once by the deployer.
 
 | Function | Caller | Description |
 |---|---|---|
+| `mark_completed(admin, student, course_id, evidence_hash)` | Admin | Called after backend verifies all lessons done. A non-empty `evidence_hash` replaces the student co-signature. |
+| `issue_certificate(admin, student, course_id, cert_id, course_title, enrollment_reference, expires_at_ledger, instructor_signature)` | Admin | Issues on-chain certificate. Requires completion. `enrollment_reference` is a free-form backend ID (e.g. UUID). |
+| `revoke_certificate(admin, cert_id)` | Admin | Flags certificate as revoked |
 | `mark_completed(admin, student, course_id)` | Admin | Called after backend verifies all lessons done |
 | `issue_certificate(admin, cert_id, student, course_id, course_title)` | Admin | Issues on-chain certificate. Requires completion. |
-| `revoke_certificate(admin, cert_id)` | Admin | Flags certificate as revoked |
+| `revoke_certificate(admin, cert_id, reason)` | Admin | Flags certificate as revoked |
+| `bulk_revoke_course_certificates(admin, course_id)` | Admin | Flags every certificate of a course as revoked in one transaction |
 
 ### Admin management
 
 | Function | Caller | Description |
 |---|---|---|
-| `transfer_admin(current_admin, new_admin)` | Admin | Transfer admin role |
-| `update_treasury(admin, new_treasury)` | Admin | Update treasury address |
+| `transfer_admin(admin1, admin2, new_admin, new_secondary_admin)` | Both admins | Propose new admin pair (step 1) — both current admins must sign |
+| `accept_admin(new_admin, new_secondary_admin)` | New admins | Accept pending admin transfer (step 2) — both new admins must sign |
+| `update_treasury(admin1, admin2, new_treasury)` | Both admins | Update treasury address — both admins must sign |
 | `update_default_fee(admin, new_fee_pct)` | Admin | Update default platform fee |
 
 ### Read-only queries
 
 | Function | Returns |
-|---|---|
+|---|---|---|
 | `get_course(course_id)` | Full `Course` struct |
 | `get_enrollment(student, course_id)` | Full `Enrollment` struct |
-| `get_certificate(certificate_id)` | Full `Certificate` struct |
+| `get_certificate(caller, certificate_id)` | Full `Certificate` struct (student, instructor, or admin only) |
 | `is_enrolled(student, course_id)` | `bool` |
 | `has_completed(student, course_id)` | `bool` |
 | `verify_certificate(certificate_id)` | `bool` — true if exists and not revoked |
@@ -226,6 +268,58 @@ Both transfers are atomic — if either fails, the whole transaction reverts. Th
 The platform fee percentage can be:
 - **Global default** (set at `init`, updatable by admin)
 - **Per-course override** (set by instructor at registration time, non-zero value)
+
+---
+
+## Refunds
+
+Hamplard supports **admin-initiated refunds** through course archival. This is the only refund mechanism in the contract.
+
+### How Refunds Work
+
+When both admins call `archive_course()` with a `students_to_refund` list, the contract refunds each listed student their full enrollment payment:
+
+```
+Original enrollment: 100 USDC
+platform_fee_percent: 20
+
+Platform fee (from treasury):     20 USDC → student
+Instructor share (from instructor): 80 USDC → student
+Total refunded:                  100 USDC
+```
+
+Refunds are only applied to **incomplete** enrollments (where `completed == false`). Students who have already completed the course are not refunded.
+
+### Refund Window
+
+There is no time-based refund window. Refunds can be initiated at any point:
+- During the course (if students want to drop out)
+- After the course ends (if issues with content or instruction)
+- The course must be **paused first**, then archived with the refund list
+
+This gives admins maximum flexibility to handle dispute resolution and quality control issues.
+
+### Multi-Admin Authorization
+
+**Both admins must sign the `archive_course()` transaction.** This is a safety mechanism that prevents a single compromised or rogue admin from unilaterally draining instructor funds through unauthorized refunds.
+
+The two-signature requirement ensures:
+- Refunds are intentional, not accidental
+- Bad actors cannot act alone
+- The platform maintains instructor trust
+
+### Example Refund Scenario
+
+1. Course `COURSE-BAKING-101` has 5 enrolled students, 3 completed
+2. Instructor disappears mid-course; students complain
+3. Both admins agree to refund the 2 incomplete students
+4. Admin calls:
+   ```
+   pause_course(COURSE-BAKING-101)
+   archive_course(admin1, admin2, COURSE-BAKING-101, [student_a, student_b])
+   ```
+5. Students A and B each receive their full 100 USDC back
+6. The 3 completed students keep their certificates (already issued) but their enrollments are deleted
 
 ---
 
@@ -258,6 +352,7 @@ Returns `true` if the certificate exists and has not been revoked. The `get_cert
 | `course_completed` | `(course_id, student)` | Completion marked by admin |
 | `certificate_issued` | `(certificate_id, student, course_id)` | Certificate issued |
 | `certificate_revoked` | `certificate_id` | Certificate revoked |
+| `course_certificates_revoked` | `(admin, course_id, revoked_count, ledger)` | All certificates of a course bulk-revoked |
 | `admin_transferred` | `new_admin` | Admin role transferred |
 
 The backend listens to these events and updates the database, sends notifications, and triggers email confirmations.
@@ -337,7 +432,7 @@ test test::test_register_course_custom_fee .............. ok
 test test::test_register_course_success ................. ok
 test test::test_register_duplicate_course ............... ok
 test test::test_revoke_certificate ...................... ok
-test test::test_update_platform_fee ..................... ok
+test test::test_update_platform_fee ...................... ok
 ```
 
 ---
@@ -368,6 +463,7 @@ stellar contract invoke \
   --network testnet \
   -- init \
   --admin <ADMIN_ADDRESS> \
+  --secondary_admin <SECONDARY_ADMIN_ADDRESS> \
   --treasury <TREASURY_ADDRESS> \
   --default_fee_pct 20
 ```
