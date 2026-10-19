@@ -1,8 +1,35 @@
-# Hamplard — Contract Repo
+﻿# Hamplard — Contract Repo
 
 > **On-chain course enrollment, payments, and certificate issuance on Stellar Soroban**
 
 Hamplard is an online learning platform for practical vocational skills — tailoring, makeup artistry, baking, photography, hairstyling, nail technology, fashion design, and more. This Soroban smart contract handles the trustless financial and credential layer of the platform: course enrollment payments, automatic instructor revenue splits, and verifiable on-chain certificates of completion.
+
+## Short version
+
+Hamplard Contracts is the Soroban smart contract layer for the Hamplard platform. It manages course lifecycle state, enrollment payments, instructor revenue splits, certificate issuance, and revocation in a trustless and auditable way.
+
+The contract provides the core rules for:
+- registering and approving courses
+- pausing and unpausing courses
+- archiving courses permanently
+- enrolling students and splitting payments automatically
+- marking enrollments complete
+- issuing and revoking certificates
+- emitting events for off-chain indexing and backend synchronization
+
+### Main contract concepts
+- Courses move through a lifecycle from Pending to Active, Paused, and Archived.
+- Enrollments trigger automatic platform and instructor payment splits.
+- Certificates can be issued after completion and later revoked with metadata captured on-chain.
+
+### Key features
+- multi-admin authorization for sensitive operations
+- course status enforcement and lifecycle rules
+- instructor earnings accounting
+- certificate issuance and revocation tracking
+- Soroban event emission for off-chain systems and indexers
+
+The detailed documentation below expands on the architecture, data model, contract functions, and deployment flow.
 
 This is **Repo 1 of 3** in the Hamplard project:
 
@@ -193,9 +220,13 @@ Initialises the contract. Called once by the deployer.
 
 | Function | Caller | Description |
 |---|---|---|
+| `mark_completed(admin, student, course_id, evidence_hash)` | Admin | Called after backend verifies all lessons done. A non-empty `evidence_hash` replaces the student co-signature. |
+| `issue_certificate(admin, student, course_id, cert_id, course_title, enrollment_reference, expires_at_ledger, instructor_signature)` | Admin | Issues on-chain certificate. Requires completion. `enrollment_reference` is a free-form backend ID (e.g. UUID). |
+| `revoke_certificate(admin, cert_id)` | Admin | Flags certificate as revoked |
 | `mark_completed(admin, student, course_id)` | Admin | Called after backend verifies all lessons done |
 | `issue_certificate(admin, cert_id, student, course_id, course_title)` | Admin | Issues on-chain certificate. Requires completion. |
-| `revoke_certificate(admin, cert_id)` | Admin | Flags certificate as revoked |
+| `revoke_certificate(admin, cert_id, reason)` | Admin | Flags certificate as revoked |
+| `bulk_revoke_course_certificates(admin, course_id)` | Admin | Flags every certificate of a course as revoked in one transaction |
 
 ### Admin management
 
@@ -209,10 +240,10 @@ Initialises the contract. Called once by the deployer.
 ### Read-only queries
 
 | Function | Returns |
-|---|---|
+|---|---|---|
 | `get_course(course_id)` | Full `Course` struct |
 | `get_enrollment(student, course_id)` | Full `Enrollment` struct |
-| `get_certificate(certificate_id)` | Full `Certificate` struct |
+| `get_certificate(caller, certificate_id)` | Full `Certificate` struct (student, instructor, or admin only) |
 | `is_enrolled(student, course_id)` | `bool` |
 | `has_completed(student, course_id)` | `bool` |
 | `verify_certificate(certificate_id)` | `bool` — true if exists and not revoked |
@@ -321,6 +352,7 @@ Returns `true` if the certificate exists and has not been revoked. The `get_cert
 | `course_completed` | `(course_id, student)` | Completion marked by admin |
 | `certificate_issued` | `(certificate_id, student, course_id)` | Certificate issued |
 | `certificate_revoked` | `certificate_id` | Certificate revoked |
+| `course_certificates_revoked` | `(admin, course_id, revoked_count, ledger)` | All certificates of a course bulk-revoked |
 | `admin_transferred` | `new_admin` | Admin role transferred |
 
 The backend listens to these events and updates the database, sends notifications, and triggers email confirmations.
@@ -400,7 +432,7 @@ test test::test_register_course_custom_fee .............. ok
 test test::test_register_course_success ................. ok
 test test::test_register_duplicate_course ............... ok
 test test::test_revoke_certificate ...................... ok
-test test::test_update_platform_fee ..................... ok
+test test::test_update_platform_fee ...................... ok
 ```
 
 ---
