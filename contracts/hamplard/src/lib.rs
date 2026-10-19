@@ -1552,6 +1552,8 @@ impl HamplardContract {
     /// after the refunds, the course is archived. Otherwise the call
     /// refunds the requested students and returns, leaving the course in
     /// `Paused` state so admins can continue refunding in follow-up calls.
+    /// `Pending` and `Rejected` courses can also be archived because they
+    /// cannot have enrollments.
     pub fn archive_course(
         env: Env,
         admin1: Address,
@@ -1569,7 +1571,10 @@ impl HamplardContract {
         let mut course = Self::get_course_internal(&env, &course_id)
             .unwrap_or_else(|| panic!("course not found"));
 
-        if course.status != CourseStatus::Paused {
+        if !matches!(
+            &course.status,
+            &CourseStatus::Paused | &CourseStatus::Pending | &CourseStatus::Rejected
+        ) {
             panic!("course must be paused before archiving");
         }
 
