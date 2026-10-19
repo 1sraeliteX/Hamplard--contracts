@@ -220,6 +220,16 @@ pub struct EnrollmentRejected {
     pub ledger_sequence: u32,
 }
 
+/// Emitted when an enrollment payment fails, along with the scoped reason code.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnrollmentFailed {
+    pub course_id: String,
+    pub student: Address,
+    pub reason_code: String,
+    pub ledger_sequence: u32,
+}
+
 // ============================================================
 // DATA TYPES
 // ============================================================
@@ -2339,6 +2349,18 @@ impl HamplardContract {
         }
     }
 
+    fn emit_enrollment_failed(env: &Env, student: &Address, course_id: &String, reason_code: &str) {
+        env.events().publish(
+            (Symbol::new(env, "enrollment_failed"), course_id.clone()),
+            EnrollmentFailed {
+                course_id: course_id.clone(),
+                student: student.clone(),
+                reason_code: String::from_str(env, reason_code),
+                ledger_sequence: env.ledger().sequence(),
+            },
+        );
+    }
+
     fn enroll_internal(env: &Env, student: &Address, course_id: &String) {
         Self::validate_enrollment(env, student, course_id);
 
@@ -2470,9 +2492,17 @@ impl HamplardContract {
         );
 
         let actual_amount_paid = if course.price > 0 {
-            // Verify actual transfer amount by checking balance before and after
+            // Verify actual transfer amount by checking balance before and after.
+            // If the token rejects the payment, emit the failure trace and exit
+            // without mutating enrollment state.
             let balance_before = token_client.balance(&env.current_contract_address());
-            token_client.transfer(student, &env.current_contract_address(), &course.price);
+            if token_client
+                .try_transfer(student, &env.current_contract_address(), &course.price)
+                .is_err()
+            {
+                Self::emit_enrollment_failed(env, student, course_id, "INSUFFICIENT_BALANCE");
+                return;
+            }
             let balance_after = token_client.balance(&env.current_contract_address());
 
             let actual_received = balance_after
@@ -2480,10 +2510,8 @@ impl HamplardContract {
                 .unwrap_or_else(|| panic!("balance overflow during transfer verification"));
 
             if actual_received != course.price {
-                panic!(
-                    "token transfer amount mismatch: expected {}, received {}",
-                    course.price, actual_received
-                );
+                Self::emit_enrollment_failed(env, student, course_id, "TRANSFER_AMOUNT_MISMATCH");
+                return;
             }
 
             if platform_amount > 0 {
@@ -2916,22 +2944,6 @@ impl HamplardContract {
             }
         }
 
-        // Archive the completed enrollment — including its evidence hash
-        // and certificate_id linkage — before it is overwritten.
-        let history_key = DataKey::EnrollmentHistory(student.clone(), course_id.clone());
-        let mut history: Vec<Enrollment> = env
-            .storage()
-            .persistent()
-            .get(&history_key)
-            .unwrap_or_else(|| Vec::new(&env));
-        history.push_back(previous_enrollment);
-        env.storage().persistent().set(&history_key, &history);
-        env.storage().persistent().extend_ttl(
-            &history_key,
-            Self::PERSISTENT_TTL_THRESHOLD,
-            Self::PERSISTENT_TTL_EXTEND_TO,
-        );
-
         let token_client = token::Client::new(&env, &course.token);
 
         // Use the centralized fee deduction function that supports:
@@ -2968,20 +2980,23 @@ impl HamplardContract {
         }
 
         if course.price > 0 {
-            // Verify actual transfer amount by checking balance before and after
             let balance_before = token_client.balance(&env.current_contract_address());
-            token_client.transfer(&student, &env.current_contract_address(), &course.price);
-            let balance_after = token_client.balance(&env.current_contract_address());
+            if token_client
+                .try_transfer(&student, &env.current_contract_address(), &course.price)
+                .is_err()
+            {
+                Self::emit_enrollment_failed(&env, &student, &course_id, "INSUFFICIENT_BALANCE");
+                return;
+            }
 
+            let balance_after = token_client.balance(&env.current_contract_address());
             let actual_received = balance_after
                 .checked_sub(balance_before)
                 .unwrap_or_else(|| panic!("balance overflow during transfer verification"));
 
             if actual_received != course.price {
-                panic!(
-                    "token transfer amount mismatch: expected {}, received {}",
-                    course.price, actual_received
-                );
+                Self::emit_enrollment_failed(&env, &student, &course_id, "TRANSFER_AMOUNT_MISMATCH");
+                return;
             }
 
             if platform_amount > 0 {
@@ -2997,6 +3012,22 @@ impl HamplardContract {
                 );
             }
         }
+
+        // Archive the completed enrollment — including its evidence hash
+        // and certificate_id linkage — before it is overwritten.
+        let history_key = DataKey::EnrollmentHistory(student.clone(), course_id.clone());
+        let mut history: Vec<Enrollment> = env
+            .storage()
+            .persistent()
+            .get(&history_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        history.push_back(previous_enrollment);
+        env.storage().persistent().set(&history_key, &history);
+        env.storage().persistent().extend_ttl(
+            &history_key,
+            Self::PERSISTENT_TTL_THRESHOLD,
+            Self::PERSISTENT_TTL_EXTEND_TO,
+        );
 
         let new_enrollment_ref = Self::generate_enrollment_ref(&env, &student, &course_id);
         let new_enrollment = Enrollment {
