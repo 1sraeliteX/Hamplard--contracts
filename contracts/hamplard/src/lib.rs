@@ -440,6 +440,7 @@ pub struct RefundRequest {
     pub course_id: String,
     pub requested_at_ledger: u32,
     pub status: RefundStatus,
+    pub refund_amount: Option<i128>,
 }
 
 /// Aggregate on-chain reputation stats for an instructor, accumulated
@@ -4499,6 +4500,7 @@ impl HamplardContract {
             course_id: course_id.clone(),
             requested_at_ledger: env.ledger().sequence(),
             status: RefundStatus::Pending,
+            refund_amount: None,
         };
 
         env.storage().persistent().set(&key, &request);
@@ -4521,6 +4523,7 @@ impl HamplardContract {
         student: Address,
         course_id: String,
         approved: bool,
+        refund_amount: Option<i128>,
     ) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "process_refund");
@@ -4556,6 +4559,26 @@ impl HamplardContract {
             // (and any risk surcharge) that deduct_fee() actually applied.
             let platform_amount = enrollment.platform_amount;
             let instructor_amount = enrollment.instructor_amount;
+            let actual_refund_amount = match refund_amount {
+                Some(amount) => {
+                    if amount < 0 || amount > enrollment.amount_paid {
+                        panic!("refund amount must be <= amount_paid");
+                    }
+                    amount
+                }
+                None => enrollment.amount_paid,
+            };
+            let platform_refund = if enrollment.amount_paid == 0 {
+                0
+            } else {
+                actual_refund_amount
+                    .checked_mul(platform_amount)
+                    .map(|v| v / enrollment.amount_paid)
+                    .unwrap_or_else(|| panic!("overflow computing platform refund"))
+            };
+            let instructor_refund = actual_refund_amount
+                .checked_sub(platform_refund)
+                .unwrap_or_else(|| panic!("refund split underflow"));
 
             let token_client = token::Client::new(&env, &course.token);
             let treasury: Address = env
@@ -4564,23 +4587,25 @@ impl HamplardContract {
                 .get(&DataKey::Treasury)
                 .unwrap_or_else(|| panic!("treasury not set"));
 
-            // Refund platform fee from treasury
-            if platform_amount > 0 {
-                token_client.transfer(&treasury, &student, &platform_amount);
+            // Refund platform fee from treasury, proportional to the request when
+            // a partial amount is specified.
+            if platform_refund > 0 {
+                token_client.transfer(&treasury, &student, &platform_refund);
             }
 
-            // Refund instructor share from contract-held earnings
-            if instructor_amount > 0 {
+            // Refund instructor share from contract-held earnings, again using the
+            // proportional partial split when a refund amount is requested.
+            if instructor_refund > 0 {
                 Self::debit_instructor_earnings(
                     &env,
                     &course.instructor,
                     &course.token,
-                    instructor_amount,
+                    instructor_refund,
                 );
                 token_client.transfer(
                     &env.current_contract_address(),
                     &student,
-                    &instructor_amount,
+                    &instructor_refund,
                 );
             }
 
@@ -4625,8 +4650,10 @@ impl HamplardContract {
             }
 
             request.status = RefundStatus::Approved;
+            request.refund_amount = Some(actual_refund_amount);
         } else {
             request.status = RefundStatus::Rejected;
+            request.refund_amount = None;
         }
 
         env.storage().persistent().set(&key, &request);
