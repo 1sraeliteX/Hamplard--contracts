@@ -1181,8 +1181,7 @@ impl HamplardContract {
         if let Some(threshold_val) = threshold {
             if course.price >= threshold_val {
                 let approval_key = DataKey2::HighValueCourseApproval(course_id.clone());
-                let prior_approver: Option<Address> =
-                    env.storage().instance().get(&approval_key);
+                let prior_approver: Option<Address> = env.storage().instance().get(&approval_key);
                 match prior_approver {
                     None => {
                         // Record first approval and return — need a second admin
@@ -3079,11 +3078,27 @@ impl HamplardContract {
 
     /// Instructor withdraws accumulated earnings for a given token.
     /// Pass `amount = 0` to withdraw the full available balance.
-    pub fn withdraw_earnings(env: Env, instructor: Address, token: Address, amount: i128) {
+    ///
+    /// `destination` is where the funds are sent. `None` sends them to
+    /// `instructor` (previous behaviour). Only the instructor must sign;
+    /// the destination does not need to authorize anything. (#349)
+    pub fn withdraw_earnings(
+        env: Env,
+        instructor: Address,
+        token: Address,
+        amount: i128,
+        destination: Option<Address>,
+    ) {
         instructor.require_auth();
 
         if amount < 0 {
             panic!("withdrawal amount cannot be negative");
+        }
+
+        let recipient = destination.unwrap_or_else(|| instructor.clone());
+
+        if recipient == env.current_contract_address() {
+            panic!("destination cannot be the contract address");
         }
 
         let earnings_key = DataKey::InstructorEarnings(instructor.clone(), token.clone());
@@ -3112,13 +3127,13 @@ impl HamplardContract {
         let token_client = token::Client::new(&env, &token);
         token_client.transfer(
             &env.current_contract_address(),
-            &instructor,
+            &recipient,
             &withdraw_amount,
         );
 
         env.events().publish(
             (Symbol::new(&env, "earnings_withdrawn"), instructor.clone()),
-            (token, withdraw_amount),
+            (token, withdraw_amount, recipient),
         );
     }
 
@@ -5769,10 +5784,12 @@ impl HamplardContract {
             .unwrap_or_else(|| panic!("course not found"));
 
         // Reject duplicate open cases for the same (caller, course_id) pair.
-        let case_key = ArbitrationCaseKey { caller: caller.clone(), course_id: course_id.clone() };
+        let case_key = ArbitrationCaseKey {
+            caller: caller.clone(),
+            course_id: course_id.clone(),
+        };
         if env.storage().persistent().has(&case_key) {
-            let existing: ArbitrationCase =
-                env.storage().persistent().get(&case_key).unwrap();
+            let existing: ArbitrationCase = env.storage().persistent().get(&case_key).unwrap();
             if existing.status == DisputeStatus::Open {
                 panic!("arbitration case already open for this dispute");
             }
@@ -5844,7 +5861,10 @@ impl HamplardContract {
             .instance()
             .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_EXTEND_TO);
 
-        let case_key = ArbitrationCaseKey { caller: caller.clone(), course_id: course_id.clone() };
+        let case_key = ArbitrationCaseKey {
+            caller: caller.clone(),
+            course_id: course_id.clone(),
+        };
         let mut case: ArbitrationCase = env
             .storage()
             .persistent()
