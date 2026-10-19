@@ -362,8 +362,9 @@ pub struct Enrollment {
     pub certificate_issued: bool,
     /// The ID of the certificate issued, if any
     pub certificate_id: Option<String>,
-    /// Optional proof of completion evidence (e.g. hash)
-    pub evidence_hash: Option<String>,
+    /// Optional fixed-size proof of completion evidence.
+    /// Stored as a 32-byte hash to keep on-chain verification compact and deterministic.
+    pub evidence_hash: Option<BytesN<32>>,
     /// Whether this enrollment has been refunded
     pub is_refunded: bool,
     /// Course version active at the time of enrollment
@@ -3225,14 +3226,14 @@ impl HamplardContract {
     /// - `admin`         — must match stored admin
     /// - `student`       — the student's address
     /// - `course_id`     — the course completed
-    /// - `evidence_hash` — non-empty proof of completion; when `None`, the
+    /// - `evidence_hash` — fixed 32-byte proof of completion; when `None`, the
     ///   student must co-sign instead
     pub fn mark_completed(
         env: Env,
         admin: Address,
         student: Address,
         course_id: String,
-        evidence_hash: Option<String>,
+        evidence_hash: Option<BytesN<32>>,
     ) {
         admin.require_auth();
         Self::require_admin(&env, &admin, "mark_completed");
@@ -3240,10 +3241,9 @@ impl HamplardContract {
             .instance()
             .extend_ttl(Self::INSTANCE_TTL_THRESHOLD, Self::INSTANCE_TTL_EXTEND_TO);
 
-        // Supplying evidence waives the student co-signature, so the evidence
-        // must be real — an empty string would bypass it with no evidence.
+        // Supplying a 32-byte evidence hash waives the student co-signature.
+        // A fixed-size hash is always a valid value, even if all bytes are 0.
         match &evidence_hash {
-            Some(hash) if hash.len() == 0 => panic!("evidence_hash cannot be empty"),
             Some(_) => {}
             None => student.require_auth(),
         }
