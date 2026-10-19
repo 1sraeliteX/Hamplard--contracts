@@ -2150,12 +2150,15 @@ impl HamplardContract {
     /// - `student`    — student's Stellar address (must sign)
     /// - `course_ids` — list of course IDs to enroll in
     ///
+    /// # Returns
+    /// The exact total amount paid across all enrollments in the batch.
+    ///
     /// # Panics
     /// - If `course_ids` is empty
     /// - If `course_ids` contains duplicates
     /// - If `course_ids.len()` exceeds `MAX_BATCH_SIZE`
     /// - If any course fails validation
-    pub fn batch_enroll(env: Env, student: Address, course_ids: Vec<String>) {
+    pub fn batch_enroll(env: Env, student: Address, course_ids: Vec<String>) -> i128 {
         student.require_auth();
 
         if course_ids.is_empty() {
@@ -2190,10 +2193,21 @@ impl HamplardContract {
         // All validations passed — enroll atomically using the validated
         // fast-path to avoid re-running the same validation inside
         // enroll_internal().
+        let mut total_paid = 0i128;
         for i in 0..course_ids.len() {
             let course_id = course_ids.get(i).unwrap();
-            Self::enroll_internal_validated(&env, &student, &course_id);
+            let amount_paid = Self::enroll_internal_validated(&env, &student, &course_id);
+            total_paid = total_paid
+                .checked_add(amount_paid)
+                .unwrap_or_else(|| panic!("batch total paid overflow"));
         }
+
+        env.events().publish(
+            (Symbol::new(&env, "batch_enrolled"), student.clone()),
+            (student, course_ids, total_paid),
+        );
+
+        total_paid
     }
 
     fn validate_enrollment(env: &Env, student: &Address, course_id: &String) {
@@ -2694,7 +2708,7 @@ impl HamplardContract {
     /// Callers must ensure `validate_enrollment()` was already called for
     /// this `(student, course_id)` pair in the same transaction. Direct
     /// external callers must use `enroll_internal()` instead.
-    fn enroll_internal_validated(env: &Env, student: &Address, course_id: &String) {
+    fn enroll_internal_validated(env: &Env, student: &Address, course_id: &String) -> i128 {
         let mut course =
             Self::get_course_internal(env, course_id).unwrap_or_else(|| panic!("course not found"));
         let token_client = token::Client::new(env, &course.token);
@@ -2868,6 +2882,8 @@ impl HamplardContract {
                 env.ledger().sequence(),
             ),
         );
+
+        actual_amount_paid
     }
     ///
     /// Unlike `enroll()`, this is allowed even though a completed
