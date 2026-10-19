@@ -95,7 +95,8 @@ This keeps the contract small, cheap to call, and focused on what blockchains ar
 
 | Role | Address | Permissions |
 |------|---------|-------------|
-| **Admin** | Set at `init` | Approve/archive courses, mark completions, issue/revoke certificates, update fee |
+| **Admin** | Set at `init` | Approve/archive courses, mark completions, issue/revoke certificates; part of multi-sig for admin transfers and treasury updates |
+| **Secondary Admin** | Set at `init` | Co-signer for admin transfers and treasury updates; must approve/sign alongside primary admin |
 | **Instructor** | Set per course | Register courses, pause/unpause their own courses |
 | **Student** | Any address | Enroll in active courses |
 | **Treasury** | Set at `init` | Receives platform fee share (passive recipient only) |
@@ -114,6 +115,7 @@ pub struct Course {
     pub platform_fee_percent: u32,     // 0-100; remainder goes to instructor
     pub token: Address,                // USDC Stellar Asset Contract
     pub total_enrollments: u32,
+    pub active_enrollments: u32,
     pub total_earned: i128,
     pub status: CourseStatus,          // Pending | Active | Paused | Archived
     pub created_at_ledger: u32,
@@ -130,6 +132,7 @@ pub struct Enrollment {
     pub enrolled_at_ledger: u32,
     pub completed: bool,
     pub certificate_issued: bool,
+    pub evidence_hash: Option<String>,
 }
 ```
 
@@ -144,6 +147,9 @@ pub struct Certificate {
     pub instructor: Address,
     pub issued_at_ledger: u32,
     pub revoked: bool,
+    pub revoked_by: Option<Address>,
+    pub revoked_at_ledger: Option<u32>,
+    pub revocation_reason: Option<String>,
 }
 ```
 
@@ -160,7 +166,7 @@ Active  ── archive_course() ──→ Archived (admin only, permanent)
 
 ## Contract Functions
 
-### `init(admin, treasury, default_fee_pct)`
+### `init(admin, secondary_admin, treasury, default_fee_pct)`
 Initialises the contract. Called once by the deployer.
 
 ### Course management
@@ -191,8 +197,9 @@ Initialises the contract. Called once by the deployer.
 
 | Function | Caller | Description |
 |---|---|---|
-| `transfer_admin(current_admin, new_admin)` | Admin | Transfer admin role |
-| `update_treasury(admin, new_treasury)` | Admin | Update treasury address |
+| `transfer_admin(admin1, admin2, new_admin, new_secondary_admin)` | Both admins | Propose new admin pair (step 1) — both current admins must sign |
+| `accept_admin(new_admin, new_secondary_admin)` | New admins | Accept pending admin transfer (step 2) — both new admins must sign |
+| `update_treasury(admin1, admin2, new_treasury)` | Both admins | Update treasury address — both admins must sign |
 | `update_default_fee(admin, new_fee_pct)` | Admin | Update default platform fee |
 
 ### Read-only queries
@@ -368,6 +375,7 @@ stellar contract invoke \
   --network testnet \
   -- init \
   --admin <ADMIN_ADDRESS> \
+  --secondary_admin <SECONDARY_ADMIN_ADDRESS> \
   --treasury <TREASURY_ADDRESS> \
   --default_fee_pct 20
 ```
