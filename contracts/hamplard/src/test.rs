@@ -11119,3 +11119,81 @@ fn test_process_refund_archives_enrollment_to_history() {
     assert_eq!(archived.student, student);
     assert_eq!(archived.course_id, course_id);
 }
+
+#[test]
+#[should_panic(expected = "enrollment has not started for this course")]
+fn test_re_enroll_rejects_before_enrollment_start_ledger() {
+    let (env, contract_id, token_id, admin, _sec_admin, _treasury, instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    let student = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token_id).mint(&student, &10_000_000_000);
+
+    register_and_approve_course(
+        &env,
+        &client,
+        &token_id,
+        &admin,
+        &instructor,
+        "COURSE-REENROLL-START",
+        100_000_000,
+    );
+    let course_id = String::from_str(&env, "COURSE-REENROLL-START");
+
+    client.enroll(&student, &course_id);
+    client.mark_completed(
+        &admin,
+        &student,
+        &course_id,
+        &Some(String::from_str(&env, "evidence")),
+    );
+
+    // Instructor sets the enrollment start ledger in the future
+    let enrollment_start = env.ledger().sequence() + 10;
+    client.set_enrollment_start_ledger(&instructor, &course_id, &Some(enrollment_start));
+
+    // Must panic exactly like enroll()
+    client.re_enroll(&student, &course_id);
+}
+
+#[test]
+fn test_re_enroll_succeeds_at_enrollment_start_ledger() {
+    let (env, contract_id, token_id, admin, _sec_admin, _treasury, instructor) = setup();
+    let client = HamplardContractClient::new(&env, &contract_id);
+
+    let student = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token_id).mint(&student, &10_000_000_000);
+
+    register_and_approve_course(
+        &env,
+        &client,
+        &token_id,
+        &admin,
+        &instructor,
+        "COURSE-REENROLL-START-OK",
+        100_000_000,
+    );
+    let course_id = String::from_str(&env, "COURSE-REENROLL-START-OK");
+
+    client.enroll(&student, &course_id);
+    client.mark_completed(
+        &admin,
+        &student,
+        &course_id,
+        &Some(String::from_str(&env, "evidence")),
+    );
+
+    let enrollment_start = env.ledger().sequence() + 10;
+    client.set_enrollment_start_ledger(&instructor, &course_id, &Some(enrollment_start));
+    env.ledger().with_mut(|l| {
+        l.sequence_number = enrollment_start;
+    });
+
+    client.re_enroll(&student, &course_id);
+
+    let enrollment = client
+        .get_enrollment(&student, &student, &course_id)
+        .unwrap();
+    assert!(!enrollment.completed);
+    assert_eq!(enrollment.enrolled_at_ledger, enrollment_start);
+}
