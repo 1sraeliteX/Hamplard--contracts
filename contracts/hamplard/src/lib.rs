@@ -224,6 +224,16 @@ pub struct EnrollmentRejected {
 // DATA TYPES
 // ============================================================
 
+/// A co-instructor of a course with a revenue share in basis points.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CoInstructor {
+    /// Address of the co-instructor.
+    pub address: Address,
+    /// Revenue share in basis points (0-10000).
+    pub share_bps: u32,
+}
+
 /// The status of a course listing
 #[contracttype]
 #[derive(Clone, PartialEq, Debug)]
